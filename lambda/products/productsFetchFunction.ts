@@ -1,7 +1,10 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
 import { DynamoDB } from 'aws-sdk';
+import * as AWSXRay from 'aws-xray-sdk';
 
 import { ProductRepository } from "/opt/nodejs/productsLayer";
+
+AWSXRay.captureAWS(require("aws-sdk")); // tudo que fizer dentro da função lambda, o xray vai capturar e medir o tempo nas operações do sdk (acessar tabela, tópicos..)
 
 const productsDdb = process.env.PRODUCTS_DDB!;
 const ddbClient = new DynamoDB.DocumentClient();

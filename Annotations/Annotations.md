@@ -45,3 +45,13 @@
 - BD no sequel: par chave/valor
 - Funciona com unidades de leitura/escrita
 ![DynamoProducts](./Images/DynamoProducts.png)
+***
+
+# AWS X-Ray
+## O que é?
+- Sistema de tracing (rastreamento) distribuído
+- Análise de consumo de tempo
+
+## Como habilitar
+- Habilite a opção tracing na construção da função Lambda
+- Capture as chamadas ao SDK da AWS, dentro da função Lambda
