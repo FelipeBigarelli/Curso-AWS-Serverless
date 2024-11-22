@@ -55,3 +55,6 @@
 ## Como habilitar
 - Habilite a opção tracing na construção da função Lambda
 - Capture as chamadas ao SDK da AWS, dentro da função Lambda
+***
+
+# AWS Lambda - Invocação síncrona e assíncrona
