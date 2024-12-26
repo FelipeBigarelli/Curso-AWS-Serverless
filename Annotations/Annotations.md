@@ -58,3 +58,38 @@
 ***
 
 # AWS Lambda - Invocação síncrona e assíncrona
+***
+
+# ORDEM PARA A CRIAÇÃO DE UMA NOVA FUNÇÃO LAMBDA
+EXEMPLO -> PEDIDOS
+- Criar stack do Lambda Layer do repositório de pedidos
+- Criar stack de aplicação de pedidos
+- Criar tabela de pedidos
+- Importar Lambda Layer do repositório de pedidos
+- Criar função de pedidos
+- Adicionar o serviço de pedidos ao API Gateway existente
+- Criar modelo de pedidos no Lambda Layer
+***
+
+# AWS SNS
+## SNS
+- Alta taxa de mensagens por segundo
+- Permite filtragem de mensagens
+- Mensagem publicada em um tópico é replicada entre todos os inscritos
+- Pode ser utilizada com filas do tipo FIFO
+
+#### SNS - Publisher
+- Aplicação rodando num ECS
+- Lambda
+- Eventos do CloudWatch
+- Outro recurso da AWS
+- Garantia de entrega de pelo menos uma cópia da mensagem
+- Pode haver inversão de mensagens
+- Precisa ter permissão para publicar mensagens
+
+#### SNS - Subscriber
+- Funções Lambda
+- Filas SQS
+- Email
+- HTTP
+- Cada inscrito recebe uma cópia da mensagem publicada

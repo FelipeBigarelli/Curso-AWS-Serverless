@@ -3,6 +3,8 @@ import * as lambdaNodeJS from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 import { Construct } from 'constructs'; 
 
@@ -45,6 +47,16 @@ export class ProductsAppStack extends cdk.Stack {
     const productEventsLayerArn = ssm.StringParameter.valueForStringParameter(this, 'ProductEventsLayerVersionArn');
     const productEventsLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'ProductEventsLayerVersionArn', productEventsLayerArn);
 
+    // Auth user info layer
+    const authUserInfoLayerArn = ssm.StringParameter.valueForStringParameter(this, 'AuthUserInfoLayerVersionArn');
+    const authUserInfoLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'AuthUserInfoLayerVersionArn', authUserInfoLayerArn)
+
+    const dlq = new sqs.Queue(this, 'ProductEventsDlq', {
+      queueName: 'product-events-dlq',
+      enforceSSL: false,
+      encryption: sqs.QueueEncryption.UNENCRYPTED,
+      retentionPeriod: cdk.Duration.days(10)
+    })
     const productEventsHandler = new lambdaNodeJS.NodejsFunction(
       this, 
       'ProductsEventsFunction', 
@@ -57,16 +69,33 @@ export class ProductsAppStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(2),
         bundling: { 
           minify: true, 
-          sourceMap: false 
+          sourceMap: false,
+          nodeModules: [
+            'aws-xray-sdk-core'
+         ]
         },
         environment: {
           EVENTS_DDB: props.eventsDdb.tableName
         },
         layers: [productEventsLayer],
         tracing: lambda.Tracing.ACTIVE,
+        deadLetterQueueEnabled: true,
+        deadLetterQueue: dlq,
         insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_333_0
       });
-    props.eventsDdb.grantWriteData(productEventsHandler);
+    // props.eventsDdb.grantWriteData(productEventsHandler);
+
+    const eventsDdbPolicy = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:PutItem'],
+      resources: [props.eventsDdb.tableArn],
+      conditions: {
+        ['ForAllValues:StringLike']: {
+          'dynamodb:LeadingKeys': ['#product_*']
+        }
+      }
+    });
+    productEventsHandler.addToRolePolicy(eventsDdbPolicy);
     
     this.productsFetchHandler = new lambdaNodeJS.NodejsFunction(
       this, // Referencia a Stack aonde ele está
@@ -80,7 +109,10 @@ export class ProductsAppStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(5),
         bundling: { // Como a função no artefato que gera no entry vai ser empacotado
           minify: true, // altera nome de variaveis, tira quebras de linhas, deixando código menor possível
-          sourceMap: false // Tira a geração de mapas para fazer debug 
+          sourceMap: false, // Tira a geração de mapas para fazer debug 
+          nodeModules: [
+            'aws-xray-sdk-core'
+         ]
         },
         environment: {
           PRODUCTS_DDB: this.productsDdb.tableName
@@ -103,13 +135,16 @@ export class ProductsAppStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(5),
         bundling: { 
           minify: true, 
-          sourceMap: false 
+          sourceMap: false,
+          nodeModules: [
+            'aws-xray-sdk-core'
+         ]
         },
         environment: {
           PRODUCTS_DDB: this.productsDdb.tableName,
           PRODUCTS_EVENTS_FUNCTION_NAME: productEventsHandler.functionName
         },
-        layers: [productsLayer, productEventsLayer],
+        layers: [productsLayer, productEventsLayer, authUserInfoLayer],
         tracing: lambda.Tracing.ACTIVE,
         insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_333_0
       });

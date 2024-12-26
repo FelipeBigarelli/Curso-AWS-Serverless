@@ -1,15 +1,23 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
-import { DynamoDB } from 'aws-sdk';
+import { CognitoIdentityServiceProvider, DynamoDB, Lambda } from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk';
 
+import { ProductEvent, ProductEventType } from "/opt/nodejs/productEventsLayer";
 import { Product, ProductRepository } from "/opt/nodejs/productsLayer";
+import { AuthInfoService } from "/opt/nodejs/authUserInfo";
 
 AWSXRay.captureAWS(require("aws-sdk")); // tudo que fizer dentro da função lambda, o xray vai capturar e medir o tempo nas operações do sdk (acessar tabela, tópicos..)
 
 const productsDdb = process.env.PRODUCTS_DDB!;
+const productEventsFuncionName = process.env.PRODUCTS_EVENTS_FUNCTION_NAME!;
+
 const ddbClient = new DynamoDB.DocumentClient();
+const lambdaClient = new Lambda();
+const cognitoIdentityServiceProvider = new CognitoIdentityServiceProvider();
 
 const productRepository = new ProductRepository(ddbClient, productsDdb);
+
+const authInfoService = new AuthInfoService(cognitoIdentityServiceProvider);
 
 export async function handler( // Nome handler igual o da Stack
   event: APIGatewayProxyEvent, 
@@ -21,11 +29,22 @@ export async function handler( // Nome handler igual o da Stack
 
   console.log(`API Gateway RequestId: ${apiRequestId} - Lambda RequestId: ${lambdaRequestId}`);
 
+  const userEmail = await authInfoService.getUserInfo(event.requestContext.authorizer);
+
   if (event.resource === '/products') {
     console.log('POST /products');
 
     const product = JSON.parse(event.body!) as Product; // produto recebido da requisição
     const productCreated = await productRepository.create(product); // criado produto a partir do recebido da req
+
+    const response = await sendProductEvent(
+      productCreated,
+      ProductEventType.CREATED,
+      userEmail,
+      lambdaRequestId
+    );
+    console.log(response);
+    
 
     return {
       statusCode: 201,
@@ -40,6 +59,14 @@ export async function handler( // Nome handler igual o da Stack
 
       try {
         const productUpdated = await productRepository.updateProduct(productId, product);
+        
+        const response = await sendProductEvent(
+          productUpdated,
+          ProductEventType.UPDATED,
+          userEmail,
+          lambdaRequestId
+        );
+        console.log(response);
         
         return {
           statusCode: 200,
@@ -57,6 +84,14 @@ export async function handler( // Nome handler igual o da Stack
       try {
         const product = await productRepository.deleteProduct(productId);
         
+        const response = await sendProductEvent(
+          product,
+          ProductEventType.DELETED,
+          userEmail,
+          lambdaRequestId
+        );
+        console.log(response);
+
         return {
           statusCode: 200,
           body: JSON.stringify(product)
@@ -76,4 +111,26 @@ export async function handler( // Nome handler igual o da Stack
     statusCode: 400,
     body: 'Bad request'
   }
+}
+
+function sendProductEvent(
+  product: Product,
+  eventType: ProductEventType,
+  email: string,
+  lambdaRequestId: string
+) {
+  const event: ProductEvent = {
+    email: email,
+    eventType: eventType,
+    productCode: product.code,
+    productId: product.id,
+    productPrice: product.price,
+    requestId: lambdaRequestId
+  }
+
+  return lambdaClient.invoke({
+    FunctionName: productEventsFuncionName,
+    Payload: JSON.stringify(event), // informação que quer passar
+    InvocationType: 'Event' // Event: invocar funções de forma assíncrona
+  }).promise();
 }
